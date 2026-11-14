@@ -1,0 +1,122 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "title": "Provengo Services Overview",
+  "uid": "provengo-overview",
+  "tags": ["provengo", "otel"],
+  "timezone": "",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(http_server_request_duration_seconds_count, service_name)", "refId": "A" },
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Active services",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "count(count by (service_name)(http_server_request_duration_seconds_count{service_name=~\"$service\"}))" }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "green", "value": null } ] } } }
+    },
+    {
+      "type": "stat",
+      "title": "Total request rate (req/s)",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=~\"$service\"}[5m]))" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 } }
+    },
+    {
+      "type": "stat",
+      "title": "Error ratio (5xx)",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=~\"$service\",http_response_status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{service_name=~\"$service\"}[5m])), 1)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2, "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.05 } ] } } }
+    },
+    {
+      "type": "stat",
+      "title": "Collector accepted spans/s",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(otelcol_receiver_accepted_spans_total[5m]))" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops", "decimals": 1 } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Request rate by service",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (service_name) (rate(http_server_request_duration_seconds_count{service_name=~\"$service\"}[5m]))", "legendFormat": "{{service_name}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "showPoints": "never" } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency p95 by service",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le, service_name) (rate(http_server_request_duration_seconds_bucket{service_name=~\"$service\"}[5m])))", "legendFormat": "{{service_name}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 0, "showPoints": "never" } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency p50 / p95 / p99 (all selected)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=~\"$service\"}[5m])))", "legendFormat": "p50" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=~\"$service\"}[5m])))", "legendFormat": "p95" },
+        { "refId": "C", "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=~\"$service\"}[5m])))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 0, "showPoints": "never" } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Go heap in use by service",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (service_name) (process_runtime_go_mem_heap_alloc_bytes{service_name=~\"$service\"})", "legendFormat": "{{service_name}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "fillOpacity": 10, "showPoints": "never" } } }
+    },
+    {
+      "type": "logs",
+      "title": "Recent logs (selected services)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "expr": "{service_name=~\"$service\"}" }
+      ],
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+    }
+  ]
+}

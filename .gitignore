@@ -1,0 +1,27 @@
+# Binaries
+mcp-server/bin/
+mcp-server/telemetry-mcp
+examples/instrumented-go-service/example-service
+*.exe
+
+# Env / secrets
+.env
+*.local
+
+# Go
+vendor/
+
+# Data volumes (local)
+data/
+.volumes/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Built binaries (named after dir)
+docs-server/docs-server
+mcp-server/mcp-server
+examples/instrumented-go-service/instrumented-go-service

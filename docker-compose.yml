@@ -1,0 +1,140 @@
+# ===========================================================================
+# Provengo Telemetry Server
+# Standalone observability stack for Provengo Go services.
+#
+#   Go services --(OTLP 4317/4318)--> OTel Collector --> Prometheus (metrics)
+#                                                     --> Jaeger     (traces)
+#                                                     --> Loki       (logs)
+#                                     Grafana <-------- all three (dashboards)
+#                                     MCP server <----- all three (Claude)
+#
+# Deploy on a dedicated telemetry host. Services elsewhere point their
+# OTEL_EXPORTER_OTLP_ENDPOINT at this host. See docs/DEPLOYMENT.md.
+# ===========================================================================
+
+name: provengo-telemetry
+
+services:
+  # ---- OpenTelemetry Collector: single ingestion point for all signals ----
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.0
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./config/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "${OTLP_GRPC_PORT:-4317}:4317"   # OTLP gRPC
+      - "${OTLP_HTTP_PORT:-4318}:4318"   # OTLP HTTP
+      - "${COLLECTOR_METRICS_PORT:-8888}:8888" # collector self-metrics
+    depends_on:
+      - prometheus
+      - jaeger
+      - loki
+    networks: [telemetry]
+
+  # ---- Prometheus: metrics storage + PromQL ----
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=${PROM_RETENTION:-15d}"
+      - "--web.enable-remote-write-receiver"
+      - "--enable-feature=exemplar-storage"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    networks: [telemetry]
+
+  # ---- Jaeger: trace storage + query/UI (accepts OTLP natively) ----
+  jaeger:
+    image: jaegertracing/all-in-one:1.65.0
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      METRICS_STORAGE_TYPE: prometheus
+      PROMETHEUS_SERVER_URL: http://prometheus:9090
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686" # Jaeger UI + query API
+    networks: [telemetry]
+
+  # ---- Loki: log storage + LogQL (accepts OTLP logs natively) ----
+  loki:
+    image: grafana/loki:3.3.2
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./config/loki-config.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    networks: [telemetry]
+
+  # ---- Grafana: dashboards over all three datasources ----
+  grafana:
+    image: grafana/grafana:11.4.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor"
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+      - jaeger
+      - loki
+    networks: [telemetry]
+
+  # ---- MCP server: exposes telemetry to Claude over HTTP/SSE ----
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HTTP_ADDR: ":8080"
+      MCP_PROMETHEUS_URL: ${MCP_PROMETHEUS_URL:-http://prometheus:9090}
+      MCP_JAEGER_URL: ${MCP_JAEGER_URL:-http://jaeger:16686}
+      MCP_LOKI_URL: ${MCP_LOKI_URL:-http://loki:3100}
+      MCP_DEFAULT_LOOKBACK: ${MCP_DEFAULT_LOOKBACK:-1h}
+      MCP_HTTP_TIMEOUT: ${MCP_HTTP_TIMEOUT:-30s}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - prometheus
+      - jaeger
+      - loki
+    networks: [telemetry]
+
+  # ---- Docs server: serves the integration .md guides as HTML (chi) ----
+  docs-server:
+    build:
+      context: ./docs-server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DOCS_ADDR: ":8081"
+      DOCS_DIR: "/docs"
+    volumes:
+      - ./docs:/docs:ro
+    ports:
+      - "8081:8081"
+    networks: [telemetry]
+
+networks:
+  telemetry:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  loki-data:
+  grafana-data:

@@ -1,0 +1,75 @@
+# OpenTelemetry Collector - single ingestion point for Provengo services.
+# Receives OTLP (metrics, traces, logs) and fans out to the three backends.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Protect the collector from memory spikes.
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+  # Batch for throughput.
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+  # Ensure service.name etc. survive; add collector-level metadata.
+  resource:
+    attributes:
+      - key: collector.name
+        value: provengo-telemetry
+        action: upsert
+
+exporters:
+  # Metrics -> Prometheus (scraped from :8889/metrics).
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true   # turn resource attrs (service.name) into metric labels
+    enable_open_metrics: true
+
+  # Traces -> Jaeger (native OTLP ingest).
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # Logs -> Loki (native OTLP ingest endpoint).
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
+  # Handy while debugging; low verbosity in normal operation.
+  debug:
+    verbosity: basic
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/jaeger]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlphttp/loki]
+  telemetry:
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888
