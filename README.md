@@ -1,12 +1,15 @@
-# Provengo Telemetry MCP
+# Provengo Observability Framework
 
-A standalone **observability server** for the Provengo Go services plus an
-**MCP server** that lets Claude query it in plain language.
+A drop-in **observability framework**: stand up one stack, then connect any
+application to it. Services emit OpenTelemetry (OTLP) to a single collector,
+which fans out to **Prometheus** (metrics), **Jaeger** (traces) and **Loki**
+(logs). **Grafana** draws the dashboards; an **MCP server** exposes the whole
+stack to Claude as typed tools; a small **docs server** publishes the
+integration guides as HTML.
 
-Services emit OpenTelemetry (OTLP) to one collector, which fans out to
-**Prometheus** (metrics), **Jaeger** (traces) and **Loki** (logs). **Grafana**
-draws the dashboards; an **MCP server** exposes the whole stack to Claude as
-typed tools; a small **docs server** publishes the integration guides as HTML.
+**Self-service integration:** a developer opens their repo and points Claude at
+one public URL — [`INTEGRATE.md`](INTEGRATE.md) — and the service is
+instrumented. See [One-shot integration](#one-shot-integration).
 
 ```
 Go services ──OTLP──▶ OTel Collector ─┬─▶ Prometheus (metrics)
@@ -24,7 +27,21 @@ different agent onto each backend. Swapping or scaling a backend is a collector
 config change, never a service change. And Claude can answer "is provengo-pay
 healthy? show me a slow trace" by calling the MCP tools directly.
 
-## Quickstart
+## One-shot integration
+
+The whole point of a framework: a developer doesn't read five docs. They open
+their service repo and tell Claude —
+
+> Read https://raw.githubusercontent.com/willianpsouza/telemetry-mcp/main/INTEGRATE.md
+> and integrate this service into the Provengo Observability Framework.
+> Telemetry host is `telemetry.internal`; name the service `provengo-xyz`.
+
+[`INTEGRATE.md`](INTEGRATE.md) is a single, self-contained file: Claude fetches
+it, detects the stack (Go / Python / other), applies the right recipe, adds the
+`OTEL_*` env vars, and reports how to verify. No framework-specific SDK, no
+per-service agent — just OTLP to one endpoint.
+
+## Quickstart (stand up the stack)
 
 ```bash
 git clone https://github.com/willianpsouza/telemetry-mcp.git
@@ -73,7 +90,8 @@ OTEL_EXPORTER_OTLP_PROTOCOL=grpc go run .
 
 | Guide | What it covers |
 |-------|----------------|
-| [INTEGRATION_GO.md](docs/INTEGRATION_GO.md)   | Instrument a Go service, step by step (copy-paste code) |
+| [INTEGRATE.md](INTEGRATE.md)                  | **Start here** — one self-contained, agent-readable integration file (Go/Python/other) |
+| [INTEGRATION_GO.md](docs/INTEGRATION_GO.md)   | Go deep-dive, step by step (copy-paste code) |
 | [PROVENGO_SERVICES.md](docs/PROVENGO_SERVICES.md) | Per-service onboarding checklist & names |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md)           | Run the telemetry host, ports, firewall, hardening |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md)       | How the pieces fit; signal paths; scaling |

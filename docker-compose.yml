@@ -126,6 +126,7 @@ services:
       DOCS_DIR: "/docs"
     volumes:
       - ./docs:/docs:ro
+      - ./INTEGRATE.md:/docs/INTEGRATE.md:ro
     ports:
       - "8081:8081"
     networks: [telemetry]
