@@ -131,6 +131,32 @@ services:
       - "8081:8081"
     networks: [telemetry]
 
+  # ---- Registry: onboarding console + app registry + OTLP auth proxy ----
+  registry:
+    build:
+      context: ./registry
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      REGISTRY_ADDR: ":8082"
+      REGISTRY_OTLP_PROXY_ADDR: ":4319"
+      REGISTRY_COLLECTOR_OTLP: "http://otel-collector:4318"
+      REGISTRY_DB_PATH: "/data/registry.db"
+      REGISTRY_ADMIN_USER: "${REGISTRY_ADMIN_USER:-admin}"
+      REGISTRY_ADMIN_PASSWORD: "${REGISTRY_ADMIN_PASSWORD:-admin}"
+      # Host shown in the copy-paste snippet (where apps reach the auth proxy).
+      REGISTRY_TELEMETRY_HOST: "${REGISTRY_TELEMETRY_HOST:-localhost}"
+      REGISTRY_INGEST_PORT: "4319"
+      REGISTRY_HEALTH_INTERVAL: "30s"
+    volumes:
+      - registry-data:/data
+    ports:
+      - "8082:8082"   # console + API
+      - "4319:4319"   # authenticated OTLP/HTTP ingestion
+    depends_on:
+      - otel-collector
+    networks: [telemetry]
+
 networks:
   telemetry:
     driver: bridge
@@ -139,3 +165,4 @@ volumes:
   prometheus-data:
   loki-data:
   grafana-data:
+  registry-data:

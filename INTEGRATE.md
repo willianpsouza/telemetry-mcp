@@ -44,6 +44,21 @@ OTEL_TRACES_SAMPLER_ARG=1.0                       # lower under heavy load
 That is the **only** configuration. Endpoints, service name, and sampling are
 all driven by these standard `OTEL_*` variables — no code changes to move hosts.
 
+### Authenticated mode (per-app token)
+
+If the framework runs the **registry** with enforcement, register the app in the
+console (`http://TELEMETRY_HOST:8082`), copy the generated snippet, and send to
+the **auth proxy** on `:4319` with the token instead of the raw collector:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://TELEMETRY_HOST:4319
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer pvgo_xxxxxxxx…
+```
+
+Everything else (code, SDK) is identical. See
+<https://github.com/willianpsouza/telemetry-mcp/blob/main/docs/REGISTRY.md>.
+
 ---
 
 ## Go services

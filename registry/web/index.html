@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Provengo Observability — Registry</title>
+<style>
+ :root{color-scheme:light dark;--bg:#0b0e14;--card:#141925;--line:#263040;--fg:#e6edf3;--mut:#8b98a9;--accent:#3b82f6;--up:#22c55e;--down:#ef4444;--warn:#eab308}
+ @media (prefers-color-scheme:light){:root{--bg:#f6f8fb;--card:#fff;--line:#e2e8f0;--fg:#0f172a;--mut:#64748b}}
+ *{box-sizing:border-box}
+ body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+ header{display:flex;align-items:center;gap:.75rem;padding:1rem 1.25rem;border-bottom:1px solid var(--line)}
+ header h1{font-size:1.05rem;margin:0;font-weight:600}
+ header .sp{flex:1}
+ main{max-width:1040px;margin:1.25rem auto;padding:0 1rem}
+ .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem 1.1rem;margin-bottom:1.1rem}
+ button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:.5rem .8rem;font:inherit;cursor:pointer}
+ button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+ button.danger{background:transparent;color:var(--down);border:1px solid var(--line)}
+ button:hover{filter:brightness(1.08)}
+ input,select{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.5rem .6rem;font:inherit;width:100%}
+ label{display:block;font-size:.8rem;color:var(--mut);margin:.5rem 0 .2rem}
+ table{width:100%;border-collapse:collapse}
+ th,td{text-align:left;padding:.55rem .5rem;border-bottom:1px solid var(--line);font-size:.9rem;vertical-align:middle}
+ th{color:var(--mut);font-weight:500}
+ .badge{display:inline-flex;align-items:center;gap:.35rem;font-size:.78rem;padding:.15rem .5rem;border-radius:999px;border:1px solid var(--line)}
+ .dot{width:.55rem;height:.55rem;border-radius:50%}
+ .up{background:var(--up)}.down{background:var(--down)}.unknown{background:var(--mut)}
+ code,pre{font-family:ui-monospace,Menlo,monospace}
+ pre{background:#0d1117;color:#e6edf3;padding:.8rem;border-radius:8px;overflow:auto;font-size:.82rem}
+ .grid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+ .mut{color:var(--mut)}.row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+ .modal{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:1rem}
+ .modal .card{max-width:560px;width:100%;margin:0}
+ .hide{display:none}
+ .tabs{display:flex;gap:.5rem;margin-bottom:1rem}
+ .tabs button{background:transparent;color:var(--mut);border:1px solid transparent;border-bottom:2px solid transparent;border-radius:0}
+ .tabs button.active{color:var(--fg);border-bottom-color:var(--accent)}
+ @media(max-width:640px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <span class="dot up" style="width:.7rem;height:.7rem"></span>
+  <h1>Provengo Observability · Registry</h1>
+  <span class="sp"></span>
+  <span id="who" class="mut"></span>
+  <button id="logoutBtn" class="ghost hide">Logout</button>
+</header>
+<main>
+  <!-- Login -->
+  <div id="loginView" class="card hide" style="max-width:380px;margin:3rem auto">
+    <h2 style="margin-top:0;font-size:1.05rem">Sign in</h2>
+    <label>Username</label><input id="lu" autocomplete="username">
+    <label>Password</label><input id="lp" type="password" autocomplete="current-password">
+    <div id="loginErr" class="mut" style="color:var(--down);min-height:1.2rem;margin:.5rem 0"></div>
+    <button id="loginBtn">Sign in</button>
+  </div>
+
+  <!-- App -->
+  <div id="appView" class="hide">
+    <div class="tabs">
+      <button data-tab="apps" class="active">Applications</button>
+      <button data-tab="users">Operators</button>
+    </div>
+
+    <section id="tab-apps">
+      <div class="card">
+        <h3 style="margin-top:0">Register application</h3>
+        <div class="grid">
+          <div><label>Name</label><input id="n"></div>
+          <div><label>Service name (OTEL_SERVICE_NAME)</label><input id="s" placeholder="provengo-pay"></div>
+          <div><label>Owner / team</label><input id="o"></div>
+          <div><label>Environment</label><input id="e" value="production"></div>
+          <div style="grid-column:1/-1"><label>Health URL (polled for quick checks)</label><input id="h" placeholder="http://host:8080/healthz"></div>
+        </div>
+        <div class="row" style="margin-top:.8rem"><button id="createBtn">Create + issue token</button></div>
+      </div>
+
+      <div class="card">
+        <div class="row"><h3 style="margin:0;flex:1">Applications</h3><button class="ghost" id="refreshBtn">Refresh</button></div>
+        <table style="margin-top:.6rem">
+          <thead><tr><th>Name</th><th>Service</th><th>Env</th><th>Health</th><th>Last ingest</th><th>Token</th><th></th></tr></thead>
+          <tbody id="appRows"></tbody>
+        </table>
+        <div id="appEmpty" class="mut" style="padding:.6rem">No applications yet.</div>
+      </div>
+    </section>
+
+    <section id="tab-users" class="hide">
+      <div class="card">
+        <h3 style="margin-top:0">Add operator</h3>
+        <div class="grid">
+          <div><label>Username</label><input id="un"></div>
+          <div><label>Password (min 8)</label><input id="up" type="password"></div>
+        </div>
+        <div class="row" style="margin-top:.8rem"><button id="userBtn">Create operator</button></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Operators</h3>
+        <table><thead><tr><th>User</th><th>Role</th><th>Created</th></tr></thead><tbody id="userRows"></tbody></table>
+      </div>
+    </section>
+  </div>
+</main>
+
+<!-- token modal -->
+<div id="modal" class="modal hide">
+  <div class="card">
+    <h3 style="margin-top:0">Token issued — copy it now</h3>
+    <p class="mut">Shown once. Store it in the service's secrets. Paste these env vars:</p>
+    <pre id="snippet"></pre>
+    <div class="row"><button id="copyBtn">Copy snippet</button><button class="ghost" id="closeModal">Done</button></div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = async (m, p, body) => {
+  const r = await fetch('/api'+p, {method:m, headers:{'Content-Type':'application/json'}, body: body?JSON.stringify(body):undefined});
+  if (r.status === 401) { showLogin(); throw new Error('unauthorized'); }
+  if (!r.ok) throw new Error(await r.text());
+  return r.status === 204 ? null : r.json();
+};
+function showLogin(){ $('#loginView').classList.remove('hide'); $('#appView').classList.add('hide'); $('#logoutBtn').classList.add('hide'); $('#who').textContent=''; }
+function showApp(me){ $('#loginView').classList.add('hide'); $('#appView').classList.remove('hide'); $('#logoutBtn').classList.remove('hide'); $('#who').textContent=me.username+' · '+me.role; loadApps(); loadUsers(); }
+
+$('#loginBtn').onclick = async () => {
+  try { const me = await api('POST','/login',{Username:$('#lu').value,Password:$('#lp').value}); showApp(me); }
+  catch(e){ $('#loginErr').textContent = 'Invalid credentials'; }
+};
+$('#logoutBtn').onclick = async () => { await api('POST','/logout'); showLogin(); };
+
+function healthBadge(a){
+  const cls = a.health_status==='up'?'up':a.health_status==='down'?'down':'unknown';
+  const txt = !a.health_url ? 'no url' : (a.health_status||'unknown') + (a.health_code?` (${a.health_code})`:'') + (a.health_latency_ms?` · ${a.health_latency_ms}ms`:'');
+  return `<span class="badge"><span class="dot ${cls}"></span>${txt}</span>`;
+}
+const fmt = t => t ? new Date(t).toLocaleString() : '—';
+
+async function loadApps(){
+  const apps = await api('GET','/applications');
+  $('#appEmpty').style.display = apps.length ? 'none':'block';
+  $('#appRows').innerHTML = apps.map(a => `
+    <tr>
+      <td>${esc(a.name)||'<span class=mut>—</span>'}${a.active?'':' <span class="badge">disabled</span>'}</td>
+      <td><code>${esc(a.service_name)}</code><div class="mut" style="font-size:.78rem">${esc(a.owner)||''}</div></td>
+      <td>${esc(a.environment)}</td>
+      <td>${healthBadge(a)}</td>
+      <td class="mut">${fmt(a.last_seen)}</td>
+      <td><code class="mut">${esc(a.token_prefix)}</code></td>
+      <td class="row">
+        <button class="ghost" onclick="rotate(${a.id})">Rotate</button>
+        <button class="ghost" onclick="toggle(${a.id},${a.active?0:1})">${a.active?'Disable':'Enable'}</button>
+        <button class="danger" onclick="del(${a.id},'${esc(a.service_name)}')">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+async function loadUsers(){
+  try { const us = await api('GET','/users');
+    $('#userRows').innerHTML = (us||[]).map(u=>`<tr><td>${esc(u.username)}</td><td>${esc(u.role)}</td><td class="mut">${fmt(u.created_at)}</td></tr>`).join('');
+  } catch(e){}
+}
+
+$('#createBtn').onclick = async () => {
+  try {
+    const res = await api('POST','/applications',{Name:$('#n').value,ServiceName:$('#s').value,Owner:$('#o').value,HealthURL:$('#h').value,Environment:$('#e').value});
+    $('#n').value=$('#s').value=$('#o').value=$('#h').value='';
+    openModal(res.snippet);
+    loadApps();
+  } catch(e){ alert('Create failed: '+e.message); }
+};
+window.rotate = async id => { if(!confirm('Rotate token? Old token stops working.'))return; const r=await api('POST',`/applications/${id}/rotate`); openModal(r.snippet); loadApps(); };
+window.toggle = async (id,active) => { await api('POST',`/applications/${id}/active`,{Active:!!active}); loadApps(); };
+window.del = async (id,name) => { if(!confirm('Delete '+name+'? Its token is revoked.'))return; await api('DELETE',`/applications/${id}`); loadApps(); };
+$('#refreshBtn').onclick = loadApps;
+
+$('#userBtn').onclick = async () => {
+  try { await api('POST','/users',{Username:$('#un').value,Password:$('#up').value}); $('#un').value=$('#up').value=''; loadUsers(); }
+  catch(e){ alert('Failed: '+e.message); }
+};
+
+function openModal(snippet){ $('#snippet').textContent = snippet; $('#modal').classList.remove('hide'); }
+$('#closeModal').onclick = () => $('#modal').classList.add('hide');
+$('#copyBtn').onclick = () => navigator.clipboard.writeText($('#snippet').textContent);
+
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  $('#tab-apps').classList.toggle('hide', b.dataset.tab!=='apps');
+  $('#tab-users').classList.toggle('hide', b.dataset.tab!=='users');
+});
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// auto-refresh health every 15s while viewing apps
+setInterval(()=>{ if(!$('#appView').classList.contains('hide') && !$('#tab-apps').classList.contains('hide')) loadApps(); }, 15000);
+
+// boot
+api('GET','/me').then(showApp).catch(showLogin);
+</script>
+</body>
+</html>

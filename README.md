@@ -5,7 +5,8 @@ application to it. Services emit OpenTelemetry (OTLP) to a single collector,
 which fans out to **Prometheus** (metrics), **Jaeger** (traces) and **Loki**
 (logs). **Grafana** draws the dashboards; an **MCP server** exposes the whole
 stack to Claude as typed tools; a small **docs server** publishes the
-integration guides as HTML.
+integration guides as HTML; and a **registry** console registers applications,
+issues ingest tokens, and probes their `/health`.
 
 **Self-service integration:** a developer opens their repo and points Claude at
 one public URL — [`INTEGRATE.md`](INTEGRATE.md) — and the service is
@@ -54,6 +55,7 @@ docker compose up -d
 - Jaeger    → http://localhost:16686
 - Prometheus→ http://localhost:9090
 - Docs      → http://localhost:8081
+- Registry  → http://localhost:8082  (onboarding console; OTLP auth proxy on :4319)
 - MCP (HTTP)→ http://localhost:8080/mcp
 
 Then instrument a service — see **[docs/INTEGRATION_GO.md](docs/INTEGRATION_GO.md)**
@@ -81,6 +83,7 @@ OTEL_EXPORTER_OTLP_PROTOCOL=grpc go run .
 │   ├── loki-config.yaml
 │   └── grafana/                  # provisioned datasources + dashboard
 ├── mcp-server/                  # Go MCP server (stdio + Streamable HTTP)
+├── registry/                    # onboarding console + app registry + OTLP auth proxy (Go + SQLite + embedded SPA)
 ├── docs-server/                 # Go (chi) server that renders docs/*.md
 ├── docs/                        # the guides below
 └── examples/instrumented-go-service/  # runnable reference service
@@ -96,6 +99,7 @@ OTEL_EXPORTER_OTLP_PROTOCOL=grpc go run .
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md)           | Run the telemetry host, ports, firewall, hardening |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md)       | How the pieces fit; signal paths; scaling |
 | [MCP_USAGE.md](docs/MCP_USAGE.md)             | Connect Claude; the tools; example prompts |
+| [REGISTRY.md](docs/REGISTRY.md)               | Onboarding console, app registry, token auth, `/health` checks |
 
 ## MCP tools (read-only)
 
