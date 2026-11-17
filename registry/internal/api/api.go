@@ -2,9 +2,11 @@
 package api
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -22,6 +24,10 @@ type API struct {
 	// Snippet hints shown to users on app creation.
 	TelemetryHost string
 	IngestPort    string
+	IngestScheme  string
+	// Collector OTLP/HTTP base for the "send test trace" action.
+	CollectorOTLP string
+	hc            *http.Client
 }
 
 type session struct {
@@ -30,8 +36,16 @@ type session struct {
 	expires  time.Time
 }
 
-func New(st *store.Store, telemetryHost, ingestPort string) *API {
-	return &API{st: st, sessions: map[string]session{}, TelemetryHost: telemetryHost, IngestPort: ingestPort}
+func New(st *store.Store, telemetryHost, ingestPort, ingestScheme, collectorOTLP string) *API {
+	if ingestScheme == "" {
+		ingestScheme = "http"
+	}
+	return &API{
+		st: st, sessions: map[string]session{},
+		TelemetryHost: telemetryHost, IngestPort: ingestPort, IngestScheme: ingestScheme,
+		CollectorOTLP: collectorOTLP,
+		hc:            &http.Client{Timeout: 8 * time.Second},
+	}
 }
 
 // Routes returns the API mux (mounted under /api by the caller).
@@ -45,6 +59,7 @@ func (a *API) Routes() *http.ServeMux {
 	m.HandleFunc("DELETE /applications/{id}", a.auth(a.deleteApp))
 	m.HandleFunc("POST /applications/{id}/rotate", a.auth(a.rotateApp))
 	m.HandleFunc("POST /applications/{id}/active", a.auth(a.setActive))
+	m.HandleFunc("POST /applications/{id}/test", a.auth(a.testApp))
 	m.HandleFunc("GET /users", a.auth(a.listUsers))
 	m.HandleFunc("POST /users", a.auth(a.createUser))
 	return m
@@ -189,6 +204,74 @@ func (a *API) setActive(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// testApp injects a minimal OTLP/HTTP trace for the app's service_name into the
+// collector, so an operator can confirm the pipeline end-to-end with one click.
+func (a *API) testApp(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(w, r)
+	if !ok {
+		return
+	}
+	app, err := a.st.GetApp(id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	payload := buildTestTrace(app.ServiceName)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost,
+		a.CollectorOTLP+"/v1/traces", bytes.NewReader(payload))
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := a.hc.Do(req)
+	if err != nil {
+		writeJSON(w, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	okStatus := resp.StatusCode >= 200 && resp.StatusCode < 300
+	writeJSON(w, map[string]any{
+		"ok":      okStatus,
+		"status":  resp.StatusCode,
+		"message": fmt.Sprintf("test span sent for %q — check Jaeger (service %s)", app.ServiceName, app.ServiceName),
+	})
+}
+
+func buildTestTrace(serviceName string) []byte {
+	traceID := make([]byte, 16)
+	spanID := make([]byte, 8)
+	_, _ = rand.Read(traceID)
+	_, _ = rand.Read(spanID)
+	now := time.Now().UnixNano()
+	start := now - int64(5*time.Millisecond)
+	body := map[string]any{
+		"resourceSpans": []any{map[string]any{
+			"resource": map[string]any{"attributes": []any{
+				attr("service.name", serviceName),
+				attr("telemetry.source", "registry-test"),
+			}},
+			"scopeSpans": []any{map[string]any{
+				"scope": map[string]any{"name": "provengo-registry"},
+				"spans": []any{map[string]any{
+					"traceId":           hex.EncodeToString(traceID),
+					"spanId":            hex.EncodeToString(spanID),
+					"name":              "registry.test",
+					"kind":              1,
+					"startTimeUnixNano": fmt.Sprintf("%d", start),
+					"endTimeUnixNano":   fmt.Sprintf("%d", now),
+				}},
+			}},
+		}},
+	}
+	b, _ := json.Marshal(body)
+	return b
+}
+
+func attr(k, v string) map[string]any {
+	return map[string]any{"key": k, "value": map[string]any{"stringValue": v}}
+}
+
 // ---------------------------- users ----------------------------
 
 func (a *API) listUsers(w http.ResponseWriter, _ *http.Request) {
@@ -227,9 +310,14 @@ func (a *API) snippet(serviceName, env, token string) string {
 	if env == "" {
 		env = "production"
 	}
+	host := a.TelemetryHost
+	if !((a.IngestScheme == "http" && a.IngestPort == "80") ||
+		(a.IngestScheme == "https" && a.IngestPort == "443") || a.IngestPort == "") {
+		host += ":" + a.IngestPort
+	}
 	return "OTEL_SERVICE_NAME=" + serviceName + "\n" +
 		"OTEL_RESOURCE_ATTRIBUTES=service.namespace=provengo,deployment.environment=" + env + "\n" +
-		"OTEL_EXPORTER_OTLP_ENDPOINT=http://" + a.TelemetryHost + ":" + a.IngestPort + "\n" +
+		"OTEL_EXPORTER_OTLP_ENDPOINT=" + a.IngestScheme + "://" + host + "\n" +
 		"OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf\n" +
 		"OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer " + token
 }

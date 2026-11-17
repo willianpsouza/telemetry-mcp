@@ -58,19 +58,24 @@ claude mcp add provengo-telemetry /abs/path/to/telemetry-mcp \
 
 ### B) Streamable HTTP (shared, runs in docker-compose)
 
-The `mcp-server` service in `docker-compose.yml` runs with `MCP_TRANSPORT=http`
-and listens on `:8080/mcp`. Point an HTTP-capable MCP client at it:
+The `mcp-server` service runs with `MCP_TRANSPORT=http` behind Caddy at
+`mcp.<domain>/mcp`. It requires a Bearer token (`MCP_AUTH_TOKEN`); set a long
+random value and keep it secret. Point an HTTP-capable MCP client at it:
 
 ```json
 {
   "mcpServers": {
     "provengo-telemetry": {
       "type": "http",
-      "url": "http://TELEMETRY_HOST:8080/mcp"
+      "url": "https://mcp.<domain>/mcp",
+      "headers": { "Authorization": "Bearer <MCP_AUTH_TOKEN>" }
     }
   }
 }
 ```
+
+Locally: `http://mcp.localhost/mcp`. If `MCP_AUTH_TOKEN` is empty the server
+starts without auth and logs a warning — only acceptable on a private network.
 
 ## Example prompts
 

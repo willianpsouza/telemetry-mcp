@@ -150,6 +150,7 @@ async function loadApps(){
       <td class="mut">${fmt(a.last_seen)}</td>
       <td><code class="mut">${esc(a.token_prefix)}</code></td>
       <td class="row">
+        <button class="ghost" onclick="test(${a.id})">Test</button>
         <button class="ghost" onclick="rotate(${a.id})">Rotate</button>
         <button class="ghost" onclick="toggle(${a.id},${a.active?0:1})">${a.active?'Disable':'Enable'}</button>
         <button class="danger" onclick="del(${a.id},'${esc(a.service_name)}')">Delete</button>
@@ -169,6 +170,11 @@ $('#createBtn').onclick = async () => {
     openModal(res.snippet);
     loadApps();
   } catch(e){ alert('Create failed: '+e.message); }
+};
+window.test = async id => {
+  try { const r = await api('POST',`/applications/${id}/test`);
+    alert(r.ok ? ('✓ '+r.message) : ('✗ test failed: '+(r.error||r.status)));
+  } catch(e){ alert('Test failed: '+e.message); }
 };
 window.rotate = async id => { if(!confirm('Rotate token? Old token stops working.'))return; const r=await api('POST',`/applications/${id}/rotate`); openModal(r.snippet); loadApps(); };
 window.toggle = async (id,active) => { await api('POST',`/applications/${id}/active`,{Active:!!active}); loadApps(); };

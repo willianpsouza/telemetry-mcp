@@ -34,6 +34,7 @@ func main() {
 	collector := env("REGISTRY_COLLECTOR_OTLP", "http://otel-collector:4318")
 	telemetryHost := env("REGISTRY_TELEMETRY_HOST", "localhost")
 	ingestPort := env("REGISTRY_INGEST_PORT", "4319")
+	ingestScheme := env("REGISTRY_INGEST_SCHEME", "http")
 	healthEvery := envDur("REGISTRY_HEALTH_INTERVAL", 30*time.Second)
 
 	st, err := store.Open(dbPath)
@@ -64,7 +65,7 @@ func main() {
 	}()
 
 	// Console + API.
-	a := api.New(st, telemetryHost, ingestPort)
+	a := api.New(st, telemetryHost, ingestPort, ingestScheme, collector)
 	sub, _ := fs.Sub(webFS, "web")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

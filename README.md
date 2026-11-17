@@ -51,12 +51,17 @@ cp .env.example .env            # set GRAFANA_ADMIN_PASSWORD
 docker compose up -d
 ```
 
-- Grafana   → http://localhost:3000  (dashboard: *Provengo / Services Overview*)
-- Jaeger    → http://localhost:16686
-- Prometheus→ http://localhost:9090
-- Docs      → http://localhost:8081
-- Registry  → http://localhost:8082  (onboarding console; OTLP auth proxy on :4319)
-- MCP (HTTP)→ http://localhost:8080/mcp
+Everything is behind a single Caddy entrypoint; `*.localhost` resolves locally,
+so no DNS setup is needed:
+
+- Console   → http://obs.localhost      (register apps, issue tokens, health)
+- Grafana   → http://grafana.localhost  (dashboard: *Provengo / Services Overview*)
+- Docs      → http://docs.localhost
+- Ingest    → http://ingest.localhost   (OTLP/HTTP + per-app Bearer token)
+- MCP       → http://mcp.localhost/mcp   (Bearer `MCP_AUTH_TOKEN`)
+
+Prometheus, Jaeger and Loki stay internal (reach them through Grafana). To
+expose publicly via Cloudflare Tunnel, see [docs/EDGE.md](docs/EDGE.md).
 
 Then instrument a service — see **[docs/INTEGRATION_GO.md](docs/INTEGRATION_GO.md)**
 — and point it at `http://TELEMETRY_HOST:4317`.
@@ -75,7 +80,8 @@ OTEL_EXPORTER_OTLP_PROTOCOL=grpc go run .
 
 ```
 .
-├── docker-compose.yml           # the whole stack
+├── docker-compose.yml           # the whole stack (Caddy fronts everything)
+├── config/Caddyfile             # single-entrypoint routing by subdomain
 ├── .env.example                 # ports, passwords, retention, MCP endpoints
 ├── config/
 │   ├── otel-collector.yaml       # OTLP in → Prometheus/Jaeger/Loki out
@@ -100,6 +106,7 @@ OTEL_EXPORTER_OTLP_PROTOCOL=grpc go run .
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md)       | How the pieces fit; signal paths; scaling |
 | [MCP_USAGE.md](docs/MCP_USAGE.md)             | Connect Claude; the tools; example prompts |
 | [REGISTRY.md](docs/REGISTRY.md)               | Onboarding console, app registry, token auth, `/health` checks |
+| [EDGE.md](docs/EDGE.md)                       | Caddy single entrypoint, Cloudflare Tunnel, subdomains, hardening |
 
 ## MCP tools (read-only)
 

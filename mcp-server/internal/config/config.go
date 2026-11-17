@@ -14,6 +14,7 @@ type Config struct {
 	LokiURL         string
 	DefaultLookback time.Duration
 	HTTPTimeout     time.Duration
+	AuthToken       string // when set (http transport), require Authorization: Bearer <token>
 }
 
 // Load reads configuration from the environment, applying sensible defaults.
@@ -26,6 +27,7 @@ func Load() Config {
 		LokiURL:         env("MCP_LOKI_URL", "http://localhost:3100"),
 		DefaultLookback: envDuration("MCP_DEFAULT_LOOKBACK", time.Hour),
 		HTTPTimeout:     envDuration("MCP_HTTP_TIMEOUT", 30*time.Second),
+		AuthToken:       os.Getenv("MCP_AUTH_TOKEN"),
 	}
 }
 

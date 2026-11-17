@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"log"
 	"net/http"
 	"os/signal"
@@ -43,9 +44,15 @@ func main() {
 
 	switch cfg.Transport {
 	case "http":
-		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+		var handler http.Handler = mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 			return newServer()
 		}, nil)
+		if cfg.AuthToken != "" {
+			handler = bearerAuth(cfg.AuthToken, handler)
+			log.Printf("telemetry-mcp: Bearer auth enabled on /mcp")
+		} else {
+			log.Printf("telemetry-mcp: WARNING /mcp has no auth (set MCP_AUTH_TOKEN)")
+		}
 		mux := http.NewServeMux()
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -67,4 +74,18 @@ func main() {
 			log.Fatalf("stdio server: %v", err)
 		}
 	}
+}
+
+// bearerAuth guards next with a constant-time Bearer token check.
+func bearerAuth(token string, next http.Handler) http.Handler {
+	want := []byte("Bearer " + token)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := []byte(r.Header.Get("Authorization"))
+		if len(got) != len(want) || subtle.ConstantTimeCompare(got, want) != 1 {
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

@@ -62,6 +62,14 @@ immediately.
 4. Paste into the service's secrets/env, deploy. The row turns green when the
    `/health` probe and first ingest succeed.
 
+## Test in one click
+
+The **Test** button on each application sends a minimal OTLP span (tagged with
+that app's `service.name`) straight into the collector and reports success —
+so you can confirm the pipeline reaches Jaeger/Prometheus without touching the
+real service. Combined with the `/health` poll, that is a full
+configured-and-reachable check from the console.
+
 ## Configuration
 
 | Env var                      | Default                        | Purpose                                    |
