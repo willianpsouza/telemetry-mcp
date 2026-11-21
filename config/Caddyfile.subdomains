@@ -1,0 +1,41 @@
+# Single entrypoint for the whole stack. TLS is terminated at the Cloudflare
+# edge (or Tunnel), so Caddy serves plain HTTP on :80 and routes by hostname.
+#
+# BASE_DOMAIN defaults to "localhost" → *.localhost resolves to 127.0.0.1, so
+# the stack is reachable locally with no DNS setup:
+#   http://obs.localhost  http://docs.localhost  http://grafana.localhost  …
+# In production set BASE_DOMAIN to your real domain and map each hostname to
+# this Caddy (via Cloudflare Tunnel → http://caddy:80). See docs/EDGE.md.
+
+{
+	auto_https off
+	admin off
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+# Onboarding console + registry API + embedded SPA.
+http://obs.{$BASE_DOMAIN:localhost} {
+	reverse_proxy registry:8082
+}
+
+# Authenticated OTLP/HTTP ingestion (apps send telemetry here with a Bearer token).
+http://ingest.{$BASE_DOMAIN:localhost} {
+	reverse_proxy registry:4319
+}
+
+# Integration guides (public read).
+http://docs.{$BASE_DOMAIN:localhost} {
+	reverse_proxy docs-server:8081
+}
+
+# Grafana dashboards (own login).
+http://grafana.{$BASE_DOMAIN:localhost} {
+	reverse_proxy grafana:3000
+}
+
+# MCP server for Claude (Bearer auth enforced by the server itself).
+http://mcp.{$BASE_DOMAIN:localhost} {
+	reverse_proxy mcp-server:8080
+}

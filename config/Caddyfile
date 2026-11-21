@@ -1,11 +1,18 @@
-# Single entrypoint for the whole stack. TLS is terminated at the Cloudflare
-# edge (or Tunnel), so Caddy serves plain HTTP on :80 and routes by hostname.
+# Single entrypoint for the whole stack, PATH-routed under ONE hostname.
+# TLS is terminated at the Cloudflare edge/Tunnel, so Caddy serves plain HTTP
+# on :80 and routes by URL path.
 #
-# BASE_DOMAIN defaults to "localhost" → *.localhost resolves to 127.0.0.1, so
-# the stack is reachable locally with no DNS setup:
-#   http://obs.localhost  http://docs.localhost  http://grafana.localhost  …
-# In production set BASE_DOMAIN to your real domain and map each hostname to
-# this Caddy (via Cloudflare Tunnel → http://caddy:80). See docs/EDGE.md.
+#   EDGE_HOSTNAME  the public host (e.g. sentry.provengo.io). Defaults to
+#                  "localhost" so the stack is reachable locally with no DNS.
+#
+#   /          -> registry console + API (/api/...)
+#   /ingest/*  -> registry OTLP auth proxy  (apps POST /ingest/v1/{traces,…})
+#   /grafana*  -> Grafana  (serve_from_sub_path, prefix kept)
+#   /mcp       -> MCP server for Claude (Bearer enforced by the server)
+#   /docs/*    -> docs-server (integration guides)
+#
+# For the subdomain-per-service layout instead, use Caddyfile.subdomains.
+# See docs/EDGE.md.
 
 {
 	auto_https off
@@ -15,27 +22,32 @@
 	}
 }
 
-# Onboarding console + registry API + embedded SPA.
-http://obs.{$BASE_DOMAIN:localhost} {
-	reverse_proxy registry:8082
-}
+http://{$EDGE_HOSTNAME:localhost} {
+	# Authenticated OTLP/HTTP ingestion. Strip /ingest so the proxy and the
+	# collector see the native /v1/{traces,metrics,logs} paths.
+	handle_path /ingest/* {
+		reverse_proxy registry:4319
+	}
 
-# Authenticated OTLP/HTTP ingestion (apps send telemetry here with a Bearer token).
-http://ingest.{$BASE_DOMAIN:localhost} {
-	reverse_proxy registry:4319
-}
+	# Integration guides. Strip /docs; docs-server re-adds it to its links via
+	# DOCS_BASE_PATH so navigation resolves at the edge.
+	redir /docs /docs/ 308
+	handle_path /docs/* {
+		reverse_proxy docs-server:8081
+	}
 
-# Integration guides (public read).
-http://docs.{$BASE_DOMAIN:localhost} {
-	reverse_proxy docs-server:8081
-}
+	# Grafana. Keep the /grafana prefix (GF_SERVER_SERVE_FROM_SUB_PATH=true).
+	handle /grafana* {
+		reverse_proxy grafana:3000
+	}
 
-# Grafana dashboards (own login).
-http://grafana.{$BASE_DOMAIN:localhost} {
-	reverse_proxy grafana:3000
-}
+	# MCP server for Claude. Keep the /mcp path; Bearer enforced by the server.
+	handle /mcp* {
+		reverse_proxy mcp-server:8080
+	}
 
-# MCP server for Claude (Bearer auth enforced by the server itself).
-http://mcp.{$BASE_DOMAIN:localhost} {
-	reverse_proxy mcp-server:8080
+	# Everything else: onboarding console + registry API (served at root).
+	handle {
+		reverse_proxy registry:8082
+	}
 }
