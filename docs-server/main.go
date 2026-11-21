@@ -20,9 +20,23 @@ import (
 	gmhtml "github.com/yuin/goldmark/renderer/html"
 )
 
+// basePath is the external path prefix this server is mounted under (e.g.
+// "/docs" when a reverse proxy strips that prefix before forwarding). Links
+// must include it so they resolve at the edge. Empty = mounted at root.
+var basePath string
+
 func main() {
 	docsDir := env("DOCS_DIR", "/docs")
 	addr := env("DOCS_ADDR", ":8081")
+	basePath = strings.TrimRight(env("DOCS_BASE_PATH", ""), "/")
+
+	// Guides live in DOCS_DIR; optional extra single-file dirs (e.g. the
+	// repo-root INTEGRATE.md mounted at /extra) are searched too. Kept separate
+	// so a single-file bind mount is never nested inside a read-only dir mount.
+	dirs := []string{docsDir}
+	if extra := env("DOCS_EXTRA_DIR", ""); extra != "" {
+		dirs = append(dirs, extra)
+	}
 
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
@@ -40,14 +54,14 @@ func main() {
 
 	// Index: list the available markdown guides.
 	r.Get("/", func(w http.ResponseWriter, _ *http.Request) {
-		files, err := listMarkdown(docsDir)
+		files, err := listMarkdown(dirs)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		var links []link
 		for _, f := range files {
-			links = append(links, link{Href: "/" + f, Text: titleize(f)})
+			links = append(links, link{Href: basePath + "/" + f, Text: titleize(f)})
 		}
 		render(w, "Provengo Telemetry — Integration Docs", indexBody(links))
 	})
@@ -63,7 +77,7 @@ func main() {
 			http.Error(w, "invalid name", http.StatusBadRequest)
 			return
 		}
-		raw, err := os.ReadFile(filepath.Join(docsDir, name))
+		raw, err := readFromDirs(dirs, name)
 		if err != nil {
 			http.NotFound(w, req)
 			return
@@ -99,19 +113,36 @@ func indexBody(links []link) template.HTML {
 	return template.HTML(b.String())
 }
 
-func listMarkdown(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
+func listMarkdown(dirs []string) ([]string, error) {
+	seen := map[string]bool{}
 	var out []string
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-			out = append(out, e.Name())
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue // a missing optional dir is not fatal
+		}
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") && !seen[e.Name()] {
+				seen[e.Name()] = true
+				out = append(out, e.Name())
+			}
 		}
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// readFromDirs returns the first dir containing name (already base-cleaned).
+func readFromDirs(dirs []string, name string) ([]byte, error) {
+	var lastErr error
+	for _, dir := range dirs {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if err == nil {
+			return b, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 func titleize(name string) string {
@@ -136,7 +167,7 @@ var page = template.Must(template.New("page").Parse(`<!doctype html>
  nav{margin-bottom:1.5rem;font-size:.9rem}
  h1,h2,h3{line-height:1.25}
 </style></head><body>
-<nav><a href="/">&larr; All guides</a></nav>
+<nav><a href="{{.Base}}/">&larr; All guides</a></nav>
 {{.Body}}
 </body></html>`))
 
@@ -145,7 +176,8 @@ func render(w http.ResponseWriter, title string, body template.HTML) {
 	_ = page.Execute(w, struct {
 		Title string
 		Body  template.HTML
-	}{title, body})
+		Base  string
+	}{title, body, basePath})
 }
 
 func env(k, def string) string {

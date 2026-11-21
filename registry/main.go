@@ -35,6 +35,7 @@ func main() {
 	telemetryHost := env("REGISTRY_TELEMETRY_HOST", "localhost")
 	ingestPort := env("REGISTRY_INGEST_PORT", "4319")
 	ingestScheme := env("REGISTRY_INGEST_SCHEME", "http")
+	ingestPath := env("REGISTRY_INGEST_PATH", "")
 	healthEvery := envDur("REGISTRY_HEALTH_INTERVAL", 30*time.Second)
 
 	st, err := store.Open(dbPath)
@@ -65,7 +66,7 @@ func main() {
 	}()
 
 	// Console + API.
-	a := api.New(st, telemetryHost, ingestPort, ingestScheme, collector)
+	a := api.New(st, telemetryHost, ingestPort, ingestScheme, ingestPath, collector)
 	sub, _ := fs.Sub(webFS, "web")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

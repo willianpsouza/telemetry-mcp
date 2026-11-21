@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,7 @@ type API struct {
 	TelemetryHost string
 	IngestPort    string
 	IngestScheme  string
+	IngestPath    string // path prefix for path-routed edges (e.g. "/ingest"); "" for host-routed
 	// Collector OTLP/HTTP base for the "send test trace" action.
 	CollectorOTLP string
 	hc            *http.Client
@@ -36,13 +38,18 @@ type session struct {
 	expires  time.Time
 }
 
-func New(st *store.Store, telemetryHost, ingestPort, ingestScheme, collectorOTLP string) *API {
+func New(st *store.Store, telemetryHost, ingestPort, ingestScheme, ingestPath, collectorOTLP string) *API {
 	if ingestScheme == "" {
 		ingestScheme = "http"
+	}
+	// Normalize path: no trailing slash, leading slash if non-empty.
+	if ingestPath != "" {
+		ingestPath = "/" + strings.Trim(ingestPath, "/")
 	}
 	return &API{
 		st: st, sessions: map[string]session{},
 		TelemetryHost: telemetryHost, IngestPort: ingestPort, IngestScheme: ingestScheme,
+		IngestPath:    ingestPath,
 		CollectorOTLP: collectorOTLP,
 		hc:            &http.Client{Timeout: 8 * time.Second},
 	}
@@ -317,7 +324,7 @@ func (a *API) snippet(serviceName, env, token string) string {
 	}
 	return "OTEL_SERVICE_NAME=" + serviceName + "\n" +
 		"OTEL_RESOURCE_ATTRIBUTES=service.namespace=provengo,deployment.environment=" + env + "\n" +
-		"OTEL_EXPORTER_OTLP_ENDPOINT=" + a.IngestScheme + "://" + host + "\n" +
+		"OTEL_EXPORTER_OTLP_ENDPOINT=" + a.IngestScheme + "://" + host + a.IngestPath + "\n" +
 		"OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf\n" +
 		"OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer " + token
 }
